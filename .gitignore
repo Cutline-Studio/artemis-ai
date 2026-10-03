@@ -8,3 +8,4 @@ runs/
 *.db-wal
 serve/
 .env
+*.whl
