@@ -1,0 +1,16 @@
+# Artemis model sizes: Prime Core (shared transformer) + ten expert modules at the listed layers.
+# Counts from ModelConfig.param_count / active_param_count (active = weights one token passes through).
+# Training follows the ramp: prove each size before starting the next.
+smoke:       {vocab_size: 2048, d_model: 128, n_layers: 2, n_heads: 4, n_kv_heads: 2, max_seq_len: 128}                     # tests only, dense
+smoke-moe:   {vocab_size: 2048, d_model: 128, n_layers: 2, n_heads: 4, n_kv_heads: 2, max_seq_len: 128, moe_layers: [1], expert_ffn_mult: 0.5}  # tests only
+
+# CPU prototype and its dense baseline. Same depth, width, attention and training budget; the baseline's wider
+# feed-forward gives it the same active weights per token (5.87M vs 5.88M), so compute per token is matched.
+proto:       {vocab_size: 4096, d_model: 256, n_layers: 6, n_heads: 8, n_kv_heads: 2, max_seq_len: 256, moe_layers: [1, 3, 5], expert_ffn_mult: 0.5}  # 8.2M total, 5.9M active
+proto-dense: {vocab_size: 4096, d_model: 256, n_layers: 6, n_heads: 8, n_kv_heads: 2, max_seq_len: 256, ffn_mult: 3.25}   # 5.9M
+
+# GPU sizes: experts at every second layer.
+100m: {vocab_size: 32000, d_model: 768,  n_layers: 12, n_heads: 12, n_kv_heads: 4, max_seq_len: 2048, moe_every: 2, expert_ffn_mult: 0.5}                 # 153M total, 111M active
+1b:   {vocab_size: 32000, d_model: 2048, n_layers: 20, n_heads: 16, n_kv_heads: 8, max_seq_len: 4096, moe_every: 2, expert_ffn_mult: 0.25}                # 1.31B total, 1.06B active
+3b:   {vocab_size: 32000, d_model: 3072, n_layers: 28, n_heads: 24, n_kv_heads: 8, ffn_mult: 3.0, max_seq_len: 4096, moe_every: 2, expert_ffn_mult: 0.25}  # 4.17B total, 3.38B active
+8b:   {vocab_size: 32000, d_model: 4096, n_layers: 36, n_heads: 32, n_kv_heads: 8, ffn_mult: 3.5, max_seq_len: 8192, moe_every: 2, expert_ffn_mult: 0.25}  # 10.2B total, 8.4B active

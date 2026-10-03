@@ -1,0 +1,10 @@
+# Website API (orchestrator). Small: no GPU, no torch needed at runtime.
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install --no-cache-dir pyyaml "psycopg[binary]>=3.2"
+COPY artemis/__init__.py artemis/brains.py artemis/backends.py artemis/orchestrator.py artemis/business.py artemis/store.py artemis/memory.py artemis/tools.py artemis/server.py artemis/
+COPY configs/business.yaml configs/
+COPY brains/ brains/
+ENV PORT=8080
+EXPOSE 8080
+CMD ["python", "-m", "artemis.server"]

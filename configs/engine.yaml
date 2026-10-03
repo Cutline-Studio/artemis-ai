@@ -1,0 +1,10 @@
+monthly_cap_usd: 2000000
+vm_hourly_usd: 98.32          # ND96isr H100 v5 list price estimate; replace with your negotiated rate
+ramp_stages: [1, 4, 16, 27]    # VMs; advance only after a stable, improving run at the current stage
+promotion_margin: 0.01         # candidate must beat the current model's held-out loss by this much
+ucb_alpha: 1.4
+search_space:
+  size: [100m, 1b, 3b, 8b]
+  lr: [1.5e-4, 3.0e-4, 6.0e-4]
+  code_share: [0.15, 0.3, 0.45]
+  warmup_frac: [0.01, 0.03]

@@ -1,0 +1,79 @@
+# Artemis AI business model: the same structure ChatGPT, Claude and Grok use.
+#   Consumer plans (monthly subscription) -> which tier of the ladder you get, how many messages, which brains.
+#   Business plans (per seat) -> admin controls, shared workspace, data not used for training.
+#   API (pay per use) -> developers are billed per million tokens, per model.
+# Tools (web search, reading pages, running code) are per plan, with a daily cap on tool calls.
+# Prices mirror the market and are the owner's to change. Billing provider: Stripe (price ids filled in once created).
+
+company: Artemis AI
+product: Artemis
+
+plans:
+  free:
+    price_usd_month: 0
+    tier: gpt-2-sft
+    brains: [earth, neptune, saturn]
+    messages_per_day: 30
+    voice_minutes_per_month: 30
+    api_access: false
+    tools: [web_search, web_fetch]
+    tool_calls_per_day: 20
+    train_on_conversations: opt-out
+  plus:
+    price_usd_month: 20
+    tier: gpt-3-aligned-rag
+    brains: all
+    messages_per_day: 500
+    voice_minutes_per_month: 600
+    api_access: false
+    tools: all
+    tool_calls_per_day: 300
+    train_on_conversations: opt-out
+  pro:
+    price_usd_month: 200
+    tier: gpt-4-asi-orchestrator
+    brains: all
+    messages_per_day: unlimited
+    voice_minutes_per_month: unlimited
+    api_access: false
+    tools: all
+    tool_calls_per_day: unlimited
+    train_on_conversations: opt-out
+  team:
+    price_usd_seat_month: 30
+    min_seats: 2
+    tier: gpt-3-aligned-rag
+    brains: all
+    messages_per_day: 1000
+    voice_minutes_per_month: 1200
+    admin_console: true
+    api_access: false
+    tools: all
+    tool_calls_per_day: 1000
+    train_on_conversations: never
+  enterprise:
+    price: contact sales
+    tier: gpt-4-asi-orchestrator
+    brains: all
+    messages_per_day: unlimited
+    voice_minutes_per_month: unlimited
+    admin_console: true
+    sso: true
+    api_access: true
+    tools: all
+    tool_calls_per_day: unlimited
+    train_on_conversations: never
+
+# Developer API: billed per 1M tokens, by model. Usage is metered per API key.
+api_models:
+  artemis-base:          {tier: gpt-1-base,             input_per_mtok: 0.10, output_per_mtok: 0.40}
+  artemis-sft:           {tier: gpt-2-sft,              input_per_mtok: 0.40, output_per_mtok: 1.60}
+  artemis-aligned:       {tier: gpt-3-aligned-rag,      input_per_mtok: 2.00, output_per_mtok: 8.00}
+  artemis-orchestrator:  {tier: gpt-4-asi-orchestrator, input_per_mtok: 5.00, output_per_mtok: 25.00}
+api_rate_limit_per_minute: 60
+api_free_credit_usd: 5
+
+policies:
+  - Artemis AI does not use Team or Enterprise conversations for training.
+  - Free, Plus and Pro users can opt out of training in settings.
+  - Artemis never claims to be a person and never claims abilities it does not have.

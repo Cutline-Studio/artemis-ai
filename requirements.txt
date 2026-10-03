@@ -1,0 +1,7 @@
+torch>=2.4
+numpy
+pyyaml
+tokenizers
+safetensors
+pytest
+psycopg[binary]>=3.2
