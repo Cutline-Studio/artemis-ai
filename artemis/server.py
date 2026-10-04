@@ -2,7 +2,7 @@
 
 Consumer (the website and apps):
   POST /v1/chat     {"message": "...", "tier": optional, "brain": optional, "history": [...]}
-                    header X-Artemis-Account identifies the signed-in user; no header means a free guest
+                    optional Authorization: Bearer art-... authenticates the account; otherwise a free guest
   POST /v1/chat/stream   same body; answers as Server-Sent Events: plan, tool_call/tool_result..., token..., replace?,
                          done | training. Chat can use tools (web search, reading pages, running Python) as the plan allows.
 Developer API (OpenAI-compatible request/response shape):
@@ -17,7 +17,7 @@ Public:
 ARTEMIS_DATABASE_URL (PostgreSQL) stores accounts, keys, usage and the waitlist; without it a local SQLite file is used.
 ARTEMIS_INFERENCE_URL points at Artemis's own vLLM server; ARTEMIS_CHECKPOINT + ARTEMIS_TOKENIZER instead load a
 checkpoint into this process (artemis/infer.py). With neither, every answer has status "training".
-Memory is only read or written for API-key accounts: the X-Artemis-Account header is not proof of identity.
+The X-Artemis-Account header is ignored for permissions. Memory endpoints require an API key.
 """
 from __future__ import annotations
 
@@ -89,7 +89,9 @@ def make_handler(app: Artemis, biz: Business):
             if self.path == "/v1/status":
                 info = app.backend.model.info() if isinstance(app.backend, LocalBackend) else None
                 toolbox = getattr(app, "toolbox", None)
-                return self._send(200, {"serving": not isinstance(app.backend, NotReadyBackend), "tiers": list(TIERS),
+                health = (app.backend.readiness() if hasattr(app.backend, "readiness") else
+                          {"configured": True, "serving": False, "status": "unverified", "quality": "unverified"})
+                return self._send(200, {**health, "tiers": list(TIERS),
                                         "tools": toolbox.status() if toolbox else {}, **({"model": info} if info else {})})
             if self.path == "/v1/memory":
                 return self._guard(lambda: self._send(200, {"memories": app.memory.list(self._api_account())}))
@@ -152,7 +154,7 @@ def make_handler(app: Artemis, biz: Business):
                 self._send(400, {"error": str(e)})
 
         def _chat_request(self, req: dict):
-            account = self.headers.get("X-Artemis-Account") or f"guest:{self._client()}"
+            account = self._api_account() if self.headers.get("Authorization") else f"guest:{self._client()}"
             msg = str(req.get("message", "")).strip()
             if not msg or len(msg) > MAX_MESSAGE_CHARS:
                 raise ValueError(f"message must be 1-{MAX_MESSAGE_CHARS} characters")
@@ -195,7 +197,8 @@ def make_handler(app: Artemis, biz: Business):
             result = app.handle(msg, tier, history, req.get("brain"), tools=self._tools(account))
             if result.status == "ok":
                 biz.record_message(account)
-            self._send(200, {**result.to_dict(), "plan": biz.plan_of(account).id, "tier": tier})
+            code = 200 if result.status == "ok" else (503 if result.status in ("training", "unavailable") else 502)
+            self._send(code, {**result.to_dict(), "plan": biz.plan_of(account).id, "tier": tier})
 
         def _completions(self, req: dict):
             auth = self.headers.get("Authorization", "")
@@ -209,7 +212,8 @@ def make_handler(app: Artemis, biz: Business):
                 raise ValueError("messages must end with a user message")
             result = app.handle(str(messages[-1]["content"]), tier, messages[:-1], account=account)
             if result.status != "ok":
-                return self._send(503, {"error": {"type": "model_training", "message": result.answer}})
+                return self._send(503 if result.status in ("training", "unavailable") else 502,
+                                  {"error": {"type": result.status, "message": result.answer}})
             prompt_tokens = sum(approx_tokens(str(m.get("content", ""))) for m in messages)
             completion_tokens = approx_tokens(result.answer)
             cost = biz.record_api_call(account, model, prompt_tokens, completion_tokens)

@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .backends import Backend, ModelNotReady
+from .backends import Backend, ModelNotReady, ModelUnavailable
 from .brains import Brain, load_brains
 from .memory import MemoryStore, context_block
 from .tools import TOOL_SPECS, Toolbox, ToolResult, parse_tool_call, result_block
@@ -36,6 +36,12 @@ TIERS = {
 }
 SUPPORT_BRAINS = {"venus", "mercury"}  # added by the tier rules, not by topic
 MAX_TOOL_STEPS = 4  # tool calls per answer
+
+
+class ResponseIncomplete(RuntimeError):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass
@@ -134,7 +140,7 @@ class Artemis:
         if self.use_model_router:
             try:
                 return self._model_route(text, limit)
-            except (ModelNotReady, ValueError):
+            except (ModelNotReady, ModelUnavailable, ValueError, TypeError):
                 pass  # fall back to the keyword router
         return keyword_route(text, self.brains, limit)
 
@@ -144,9 +150,10 @@ class Artemis:
             f"Choose at most {limit} brains for this request. Reply with JSON "
             f'{{"brains": [...], "reason": "..."}} using only these ids:\n{menu}\n\nRequest: {text}'}], max_tokens=200)
         data = json.loads(reply[reply.index("{"): reply.rindex("}") + 1])
-        chosen = [b for b in data.get("brains", []) if b in self.brains and b not in SUPPORT_BRAINS][:limit]
-        if not isinstance(data.get("brains"), list):
+        if not isinstance(data, dict) or not isinstance(data.get("brains"), list):
             raise ValueError("router reply has no brain list")
+        chosen = list(dict.fromkeys(b for b in data["brains"] if isinstance(b, str) and b in self.brains
+                                   and self.brains[b].kind == "specialist" and b not in SUPPORT_BRAINS))[:limit]
         return Plan(chosen, str(data.get("reason", "")), "model")
 
     def _prepare(self, text, tier, history, brain, account):
@@ -163,11 +170,13 @@ class Artemis:
         return rules, plan, sub, len(notes)
 
     def _audit(self, text, answer, sub):
-        audit = self._ask("venus", [{"role": "user", "content": f"Request: {text}\n\nDraft answer:\n{answer}\n\nReply PASS or FAIL with reasons."}], 300)
+        audit = self._ask("venus", sub + [{"role": "user", "content": f"Request: {text}\n\nDraft answer:\n{answer}\n\nReply PASS or FAIL with reasons."}], 300)
         fixed = None
         if audit.strip().upper().startswith("FAIL"):
             fixed = self._ask("artemis", sub + [{"role": "assistant", "content": answer},
                                                {"role": "user", "content": f"Venus found problems; fix them:\n{audit}"}])
+            if not fixed.strip() or "<tool_call>" in fixed:
+                raise ResponseIncomplete("audit_failed", "The model could not complete its correction; please retry.")
         return audit, fixed
 
     def handle(self, text: str, tier: str = "gpt-4-asi-orchestrator", history: list[dict] | None = None,
@@ -188,8 +197,10 @@ class Artemis:
                 r = ev["result"]
                 if r.status == "training":
                     yield {"type": "training", "status": "training", "message": r.answer}
-                else:
+                elif r.status == "ok":
                     yield {"type": "done", **r.to_dict()}
+                else:
+                    yield {"type": "error", "status": r.status, "message": r.answer, "tools_used": r.tools_used}
             else:
                 yield ev
 
@@ -204,20 +215,21 @@ class Artemis:
             else:  # several specialists draft in parallel (no tools), then Artemis merges with tools
                 futures = {b: self.pool.submit(self._ask, b, sub) for b in plan.brains}
                 drafts = {b: f.result() for b, f in futures.items()}
-                final = ("artemis", self._merge_messages(text, drafts))
+                final = ("artemis", sub[:-1] + [{"role": "user", "content":
+                    sub[-1]["content"] + "\n\n" + self._merge_messages(text, drafts)[0]["content"]}])
             loop = self._respond(*final, tools)
             while True:
                 try:
                     ev = next(loop)
                 except StopIteration as stop:
-                    answer = stop.value
+                    answer, evidence = stop.value
                     break
                 if ev["type"] == "tool_call":
                     used.append(ev["name"])
                 yield ev
             audit = None
             if rules["audit"] and plan.brains:
-                audit, fixed = self._audit(text, answer, sub)
+                audit, fixed = self._audit(text, answer, evidence)
                 if fixed:
                     answer = fixed
                     yield {"type": "replace", "text": fixed}
@@ -226,6 +238,9 @@ class Artemis:
         except ModelNotReady as e:
             yield {"type": "result", "result": Result(str(e), plan, latency_ms=int((time.monotonic() - t0) * 1000),
                                                       status="training", memories_used=n_mem)}
+        except (ModelUnavailable, ResponseIncomplete) as e:
+            yield {"type": "result", "result": Result(str(e), plan, latency_ms=int((time.monotonic() - t0) * 1000),
+                status=e.status if isinstance(e, ResponseIncomplete) else "unavailable", memories_used=n_mem, tools_used=used)}
 
     def _respond(self, brain_id: str, messages: list[dict], tools: "ToolAccess | None", max_tokens: int = 512):
         """One answer, using tools when allowed: the model may call a tool, see its result, and continue, up to
@@ -234,17 +249,19 @@ class Artemis:
         system = self.brains[brain_id].system_prompt() + (tools.toolbox.instructions(allowed) if allowed else "")
         msgs, shown = list(messages), []
         for step in range(MAX_TOOL_STEPS + 1):
-            filt = _CallFilter() if allowed else None
+            filt = _CallFilter()
             raw = []
             for piece in self._stream_raw(brain_id, system, msgs, max_tokens):
                 raw.append(piece)
-                out = filt.feed(piece) if filt else piece
+                out = filt.feed(piece)
                 if out:
                     yield {"type": "token", "text": out}
             reply = "".join(raw)
-            call = parse_tool_call(reply) if allowed else None
+            call = parse_tool_call(reply)
             if call is None:
-                tail = filt.flush() if filt else ""
+                if filt.stopped:
+                    raise ResponseIncomplete("tool_protocol_error", "The model returned an unfinished tool call; please retry.")
+                tail = filt.flush()
                 if tail:
                     yield {"type": "token", "text": tail}
                 shown.append(reply)
@@ -252,13 +269,20 @@ class Artemis:
             cut = reply.index("<tool_call>")
             shown.append(reply[:cut])
             if step == MAX_TOOL_STEPS:
-                break
+                raise ResponseIncomplete("tool_limit", "The tool limit was reached before an answer was completed; please narrow the request.")
+            if not tools or not allowed:
+                raise ResponseIncomplete("tool_unavailable", "The model requested a tool that is unavailable for this request.")
             yield {"type": "tool_call", "name": call["name"], "arguments": _display_args(call)}
             result = self._run_tool(call, tools)
             yield {"type": "tool_result", "name": result.name, "ok": result.ok, **result.display}
             msgs += [{"role": "assistant", "content": reply[:reply.index("</tool_call>") + len("</tool_call>")]},
                      {"role": "user", "content": result_block(result)}]
-        return "".join(shown).strip()
+            if step == MAX_TOOL_STEPS - 1:
+                system = self.brains[brain_id].system_prompt() + "\nNo more tool calls are allowed. Answer from the results already provided, stating any limits."
+        answer = "".join(shown).strip()
+        if not reply.strip():
+            raise ResponseIncomplete("empty_response", "The model returned no answer; please retry.")
+        return answer, msgs
 
     def _run_tool(self, call: dict, tools: "ToolAccess") -> ToolResult:
         name = call["name"]

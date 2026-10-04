@@ -218,7 +218,7 @@ def test_tool_steps_are_capped():
     biz = Business(":memory:")
     biz.set_plan("acct:x", "pro")
     r = Artemis(model).handle("loop forever", "gpt-1-base", tools=access(T.Toolbox(FakeSearch(), None), biz, "acct:x"))
-    assert len(r.tools_used) == MAX_TOOL_STEPS and r.status == "ok"
+    assert len(r.tools_used) == MAX_TOOL_STEPS and r.status == "tool_limit" and r.answer
 
 
 def test_no_tools_means_no_tool_prompt_and_raw_text_passes_through():

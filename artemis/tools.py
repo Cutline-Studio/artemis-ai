@@ -262,7 +262,10 @@ class LocalCodeRunner:
     def run(self, code: str, session: str, timeout: float = 10.0) -> dict:
         def limits():
             import resource
-            resource.setrlimit(resource.RLIMIT_CPU, (int(timeout), int(timeout)))
+            # Let the wall-clock timeout report the failure before the CPU hard limit kills it.
+            # Equal limits race and turn a timeout into a generic process failure.
+            cpu_limit = max(1, int(timeout) + 1)
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
             resource.setrlimit(resource.RLIMIT_AS, (512 << 20, 512 << 20))
         t0 = time.time()
         with tempfile.TemporaryDirectory() as d:
@@ -271,8 +274,6 @@ class LocalCodeRunner:
                                    text=True, timeout=timeout, preexec_fn=limits)
             except subprocess.TimeoutExpired:
                 raise ToolError(f"the code ran longer than {timeout:.0f} seconds and was stopped") from None
-        if p.returncode < 0:  # killed by RLIMIT_CPU (SIGXCPU) or other signal
-            raise ToolError(f"the code ran longer than {timeout:.0f} seconds and was stopped")
         return {"status": "Success" if p.returncode == 0 else "Failure", "stdout": p.stdout[-20000:], "stderr": p.stderr[-20000:],
                 "result": None, "ms": int((time.time() - t0) * 1000)}
 
