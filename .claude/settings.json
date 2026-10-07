@@ -21,29 +21,38 @@
       "mcp__azure__group_list",
       "mcp__azure__group_resource_list",
       "mcp__azure__pricing",
-      "WebFetch(domain:learn.microsoft.com)"
+      "WebFetch(domain:learn.microsoft.com)",
+      "Read(//**)",
+      "Edit(//**)",
+      "WebFetch",
+      "Bash(git *)",
+      "Bash(rm *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(chmod *)",
+      "Bash(az *)",
+      "Bash(*infra/*)",
+      "Bash(*scripts/*)"
     ],
     "ask": [
-      "Bash(rm *)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(*infra/azure/*)",
-      "Bash(az * create *)",
-      "Bash(az * delete *)",
-      "Bash(az * update *)",
-      "Bash(az * set *)",
-      "Bash(az vm *)",
-      "Bash(az role *)"
+      "Bash(*infra/azure/deploy-api.sh*)"
     ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(**/*.pem)",
       "Read(**/*.pfx)",
-      "Read(**/artemis-claude-credentials.txt)"
+      "Read(**/artemis-claude-credentials.txt)",
+      "Read(**/.env)",
+      "Read(**/*.key)",
+      "Read(**/*.secret)",
+      "Bash(sudo *)"
     ]
   },
-  "enabledMcpjsonServers": ["azure"],
+  "enabledMcpjsonServers": [
+    "azure"
+  ],
   "hooks": {
     "SessionStart": [
       {
