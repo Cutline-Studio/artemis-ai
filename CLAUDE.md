@@ -53,13 +53,16 @@ CI (`.github/workflows/tests.yml`) runs only pytest, on Python 3.11 and 3.13. Th
   Production uses `ARTEMIS_CODE_SESSIONS_ENDPOINT` (Azure dynamic sessions).
 - Order-sensitive names: `EXPERT_NAMES` in `model.py` indexes the `.dom` label shards and checkpoints, and the key order of
   `TIERS` in `orchestrator.py` defines plan entitlements. Do not reorder or rename either.
-- `load_brains` requires all ten specialists plus `artemis`. Removing or renaming a brain yaml breaks the server.
+- `load_brains` needs one brain yaml whose `id:` matches each name in `SPECIALIST_IDS` (`artemis/brains.py`), plus
+  `artemis`. Deleting a brain yaml or changing its `id:` stops the server from starting. Filenames do not matter.
 - `brains/*.yaml` and `configs/business.yaml` feed the weights through `knowledge.py`. A training test asserts that
   the artemis data contains "$20 a month", "$200 a month" and "I'm Artemis", and does not contain "Cutline".
-- Plan limits and prices live in `configs/business.yaml`. Do not hard-code them in Python.
+- Prices and per-plan quotas (messages, brains, tools, tool calls, API prices) live in `configs/business.yaml`. Do not
+  hard-code them in Python. Per-tier capabilities (specialists per request, audit, memory) are `TIERS` in `orchestrator.py`.
 - The API image (`infra/azure/Dockerfile.api`) has no torch and copies an explicit list of modules. A new module the
   server imports must be added to its `COPY` line, and server-path code must not import torch at module level.
-- SQL uses `?` placeholders (`store.py` rewrites them for Postgres). Never put a literal `?` in SQL text. The schema
+- SQL uses `?` placeholders (`store.py` rewrites them to `%s` for Postgres). Never put a literal `?` or `%` in SQL text;
+  pass such values as parameters. SQLite tests will not catch either mistake. The schema
   is `CREATE ... IF NOT EXISTS` with no migrations, so a column change does not reach existing databases.
 - Config files resolve relative to the package (`Path(__file__).resolve().parent.parent`), not the working directory.
 
@@ -91,7 +94,8 @@ CI (`.github/workflows/tests.yml`) runs only pytest, on Python 3.11 and 3.13. Th
   `test_tools`.
 - No formatter, linter or line limit is configured, and lines up to about 180 characters are normal. Do not reformat
   code you are not otherwise changing, and do not run ruff, black or mypy with fixes across the repo.
-- Every module starts with a docstring stating its purpose and `from __future__ import annotations`. Comments are
+- Every module starts with a docstring stating its purpose, and all but `__init__.py` import
+  `from __future__ import annotations`. Comments are
   sparse and explain why, not what. Import torch and psycopg lazily where the module can run without them.
 - Commit subjects are imperative and sentence case with no prefix or trailing period, for example
   "Add CI test workflow and cloud-session startup hook".
