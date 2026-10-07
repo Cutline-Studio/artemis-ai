@@ -112,14 +112,14 @@ Base URL: `https://artemis-api.whitemeadow-751c0637.eastus.azurecontainerapps.io
 |---|---|---|
 | `GET /v1/status` | none | Whether a model is serving, which tools are configured, model info |
 | `GET /v1/plans`, `GET /v1/brains` | none | Plans and prices; the personas |
-| `POST /v1/chat` | optional `X-Artemis-Account` | One answer as JSON |
-| `POST /v1/chat/stream` | optional `X-Artemis-Account` | Server-Sent Events: `plan`, `tool_call`, `tool_result`, `token`, `replace`, then `done` or `training` |
+| `POST /v1/chat` | optional `Authorization: Bearer art-...` | One answer as JSON |
+| `POST /v1/chat/stream` | optional `Authorization: Bearer art-...` | Server-Sent Events: `plan`, `tool_call`, `tool_result`, `token`, `replace`, then `done`, `training` or `error` |
 | `POST /v1/chat/completions` | `Authorization: Bearer art-...` | OpenAI-compatible request and response, billed per token |
 | `GET/POST /v1/memory`, `DELETE /v1/memory/<id>` | API key | The account's memory notes |
 | `POST /v1/waitlist` | none | `{"email": ...}` |
 
-Errors: 400 bad input, 401 missing or unknown key, 402 the plan doesn't include it, 429 limit reached.
-The `X-Artemis-Account` header is not proof of identity, so memory is only available with an API key.
+Errors: 400 bad input, 401 missing or unknown key, 402 the plan doesn't include it, 429 limit reached, 502 the model returned an incomplete answer, 503 the model is training or inference is unavailable.
+The `X-Artemis-Account` header is ignored for permissions; paid plans, tools and memory require a verified API key.
 
 Stream example:
 
