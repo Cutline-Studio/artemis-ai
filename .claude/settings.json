@@ -1,4 +1,49 @@
 {
+  "permissions": {
+    "allow": [
+      "Edit(artemis/**)",
+      "Edit(tests/**)",
+      "Edit(docs/**)",
+      "Edit(brains/**)",
+      "Edit(configs/**)",
+      "Bash(python -m pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(az account show *)",
+      "Bash(az group list *)",
+      "Bash(az provider list *)",
+      "Bash(az provider show *)",
+      "mcp__azure__documentation",
+      "mcp__azure__get_azure_bestpractices",
+      "mcp__azure__subscription_list",
+      "mcp__azure__group_list",
+      "mcp__azure__group_resource_list",
+      "mcp__azure__pricing",
+      "WebFetch(domain:learn.microsoft.com)"
+    ],
+    "ask": [
+      "Bash(rm *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(*infra/azure/*)",
+      "Bash(az * create *)",
+      "Bash(az * delete *)",
+      "Bash(az * update *)",
+      "Bash(az * set *)",
+      "Bash(az vm *)",
+      "Bash(az role *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.pfx)",
+      "Read(**/artemis-claude-credentials.txt)"
+    ]
+  },
+  "enabledMcpjsonServers": ["azure"],
   "hooks": {
     "SessionStart": [
       {
