@@ -15,8 +15,9 @@ service principal from the environment variables `AZURE_CLIENT_ID`, `AZURE_CLIEN
 - If the variables are missing, tell the user to add them in the cloud environment settings and start a new
   session. Never ask for the secret in chat.
 - The script keeps only the first whitespace-separated token of each variable, because pasted values have
-  carried stray whitespace and trailing notes that Entra rejects (AADSTS7000215). The Azure MCP Server reads
-  the variables verbatim, so it still needs clean values in the environment settings.
+  carried stray whitespace and trailing notes that Entra rejects (AADSTS7000215). `.mcp.json` (Claude Code)
+  and `.cursor/mcp.json` (Cursor) start the Azure MCP Server through `scripts/mcp-env-wrapper.sh`, which
+  applies the same cleanup (plus quote stripping) and only warns on stderr when an ID is not a GUID.
 
 ## Azure MCP Server
 

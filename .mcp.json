@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "azure": {
-      "command": "npx",
-      "args": ["-y", "@azure/mcp@latest", "server", "start"]
+      "command": "bash",
+      "args": ["scripts/mcp-env-wrapper.sh", "npx", "-y", "@azure/mcp@latest", "server", "start"]
     }
   }
 }
