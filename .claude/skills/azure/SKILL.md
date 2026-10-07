@@ -14,6 +14,9 @@ service principal from the environment variables `AZURE_CLIENT_ID`, `AZURE_CLIEN
 - Never use `az login --use-device-code`: the tenant's security defaults block it (AADSTS530035).
 - If the variables are missing, tell the user to add them in the cloud environment settings and start a new
   session. Never ask for the secret in chat.
+- The script keeps only the first whitespace-separated token of each variable, because pasted values have
+  carried stray whitespace and trailing notes that Entra rejects (AADSTS7000215). The Azure MCP Server reads
+  the variables verbatim, so it still needs clean values in the environment settings.
 
 ## Azure MCP Server
 
