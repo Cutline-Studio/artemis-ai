@@ -1,17 +1,23 @@
 #!/bin/bash
-# Prepare Claude Code cloud sessions: install test dependencies and, when a scoped
-# service principal is configured, sign in to Azure. Local sessions skip this.
+# Claude Code cloud sessions: install the Python test dependencies and the Azure CLI so tests and az work at once.
+# Idempotent: skips anything already installed. Does nothing on local machines.
 set -euo pipefail
-[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0
-cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}"
 
-# CPU-only torch keeps the install small; no test needs a GPU.
-pip install -q --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  exit 0
+fi
+cd "$CLAUDE_PROJECT_DIR"
 
-# Azure is opt-in: set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and AZURE_TENANT_ID as environment
-# secrets for a least-privilege service principal. Never use a personal or Global Admin account.
-if [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_CLIENT_SECRET:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ]; then
-  command -v az >/dev/null || pip install -q azure-cli
-  az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" \
-    --tenant "$AZURE_TENANT_ID" --output none
+if ! python3 -c "import torch, numpy, yaml, tokenizers, safetensors, transformers, pytest, psycopg" 2>/dev/null; then
+  # CPU-only torch: the CUDA build is several GB and nothing here needs a GPU.
+  python3 -c "import torch" 2>/dev/null || \
+    python3 -m pip install -q --index-url https://download.pytorch.org/whl/cpu torch
+  python3 -m pip install -q -r requirements.txt
+fi
+
+# Azure CLI in its own virtualenv (pip refuses to replace Debian's argcomplete otherwise).
+if ! command -v az >/dev/null 2>&1; then
+  python3 -m venv /opt/azcli
+  /opt/azcli/bin/pip install -q azure-cli
+  ln -sf /opt/azcli/bin/az /usr/local/bin/az
 fi

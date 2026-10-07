@@ -3,5 +3,6 @@ numpy
 pyyaml
 tokenizers
 safetensors
+transformers
 pytest
 psycopg[binary]>=3.2

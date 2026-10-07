@@ -34,8 +34,7 @@ Requirements: Python 3.11+, git, and for the website tests Node 18+ with Playwri
 ```bash
 cd artemis-ai
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # torch, numpy, pyyaml, tokenizers, safetensors, pytest, psycopg
-pip install transformers                 # optional: enables the export-equivalence tests
+pip install -r requirements.txt          # torch, numpy, pyyaml, tokenizers, safetensors, transformers, pytest, psycopg
 python -m pytest tests                   # about 45 s on a laptop CPU; expect all tests to pass
 ```
 

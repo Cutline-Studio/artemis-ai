@@ -1,0 +1,68 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(artemis/**)",
+      "Edit(tests/**)",
+      "Edit(docs/**)",
+      "Edit(brains/**)",
+      "Edit(configs/**)",
+      "Bash(python -m pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(az account show *)",
+      "Bash(az group list *)",
+      "Bash(az provider list *)",
+      "Bash(az provider show *)",
+      "mcp__azure__documentation",
+      "mcp__azure__get_azure_bestpractices",
+      "mcp__azure__subscription_list",
+      "mcp__azure__group_list",
+      "mcp__azure__group_resource_list",
+      "mcp__azure__pricing",
+      "WebFetch(domain:learn.microsoft.com)",
+      "Read(//**)",
+      "Edit(//**)",
+      "WebFetch",
+      "Bash(git *)",
+      "Bash(rm *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(chmod *)",
+      "Bash(az *)",
+      "Bash(*infra/*)",
+      "Bash(*scripts/*)"
+    ],
+    "ask": [
+      "Bash(*infra/azure/deploy-api.sh*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.pfx)",
+      "Read(**/artemis-claude-credentials.txt)",
+      "Read(**/.env)",
+      "Read(**/*.key)",
+      "Read(**/*.secret)",
+      "Bash(sudo *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "azure"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
