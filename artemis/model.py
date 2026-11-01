@@ -7,7 +7,8 @@ routes computation, combines expert outputs and generates every token.
 Experts: at the layers listed in `moe_layers`, a learned router scores ten SwiGLU expert modules
 (Intent, Architecture, Planning, Build, Test, Deploy, Memory, Security, Observability, Cost) for each token,
 keeps the top two, renormalizes their weights to sum to 1, and adds the weighted expert outputs back into the
-Prime Core's residual stream alongside its own dense feed-forward.
+Prime Core's residual stream alongside its own dense feed-forward. With `shared_ffn_mult` set, expert layers
+shrink that dense feed-forward to a small always-on shared expert, so most of their compute goes through the router.
 
 Training terms besides next-token loss: a load-balancing loss (keeps tokens spread across experts), a router
 z-loss (keeps router logits small), and an optional routing-supervision loss on tokens whose domain is labeled
@@ -44,6 +45,9 @@ class ModelConfig:
     n_experts: int = len(EXPERT_NAMES)
     experts_per_token: int = 2
     expert_ffn_mult: float = 1.0
+    # 0 keeps the additive layout (full dense FFN plus routed experts at expert layers). Above 0, expert layers swap
+    # the dense FFN for a small always-on shared expert of this width, so most of their compute is routed.
+    shared_ffn_mult: float = 0.0
     expert_names: tuple[str, ...] = EXPERT_NAMES
     balance_coef: float = 0.01
     router_z_coef: float = 0.001
@@ -69,6 +73,10 @@ class ModelConfig:
     def _expert_dim(self) -> int:
         return 64 * math.ceil(int(self.expert_ffn_mult * self.d_model) / 64)
 
+    def _shared_dim(self) -> int:
+        """Width of the always-on FFN at expert layers: the full dense FFN unless shared_ffn_mult is set."""
+        return 64 * math.ceil(int(self.shared_ffn_mult * self.d_model) / 64) if self.shared_ffn_mult else self._ffn_dim()
+
     def _attn_params(self) -> int:
         head_dim = self.d_model // self.n_heads
         return self.d_model * (self.n_heads * head_dim) * 2 + self.d_model * (self.n_kv_heads * head_dim) * 2
@@ -77,7 +85,8 @@ class ModelConfig:
         """All weights (embedding counted once; the output head shares it)."""
         dense = self.vocab_size * self.d_model + self.n_layers * (self._attn_params() + 3 * self.d_model * self._ffn_dim()
                                                                   + 2 * self.d_model) + self.d_model
-        return dense + len(self.moe_layers) * (self.d_model * self.n_experts + self.n_experts * 3 * self.d_model * self._expert_dim())
+        shrink = len(self.moe_layers) * 3 * self.d_model * (self._ffn_dim() - self._shared_dim())
+        return dense - shrink + len(self.moe_layers) * (self.d_model * self.n_experts + self.n_experts * 3 * self.d_model * self._expert_dim())
 
     def active_param_count(self) -> int:
         """Weights each token passes through (router plus its top-k experts only); compares compute with a dense model."""
@@ -192,7 +201,7 @@ class Block(nn.Module):
     def __init__(self, cfg: ModelConfig, moe: bool):
         super().__init__()
         self.n1, self.attn = RMSNorm(cfg.d_model), Attention(cfg)
-        self.n2, self.ffn = RMSNorm(cfg.d_model), FeedForward(cfg.d_model, cfg._ffn_dim())
+        self.n2, self.ffn = RMSNorm(cfg.d_model), FeedForward(cfg.d_model, cfg._shared_dim() if moe else cfg._ffn_dim())
         self.moe = ExpertMixture(cfg) if moe else None
 
     def forward(self, x, cos, sin, domains=None):

@@ -236,6 +236,42 @@ def test_moe_export_matches_qwen2_moe(labeled, tmp_path):
     assert torch.allclose(a, b, atol=1e-4), (a - b).abs().max()
 
 
+def test_shared_expert_mode_shrinks_only_the_expert_layer_ffn_and_counts_match():
+    additive, shared = ArtemisLM(tiny()), ArtemisLM(tiny(shared_ffn_mult=0.5))
+    assert shared.blocks[1].ffn.up.weight.shape[0] == shared.cfg._expert_dim() < additive.blocks[1].ffn.up.weight.shape[0]
+    assert shared.blocks[0].ffn.up.weight.shape == additive.blocks[0].ffn.up.weight.shape
+    for m in (additive, shared):
+        assert m.cfg.param_count() == sum(p.numel() for p in m.parameters())
+    assert shared.cfg.active_param_count() < additive.cfg.active_param_count()
+    logits, loss = shared(torch.randint(0, 256, (2, 16)), torch.randint(0, 256, (2, 16)))
+    loss.backward()
+    assert shared.blocks[1].ffn.up.weight.grad is not None and logits.shape == (2, 16, 256)
+
+
+def test_checkpoints_without_shared_ffn_mult_still_load_as_additive():
+    cfg = tiny().to_dict()
+    del cfg["shared_ffn_mult"]
+    assert ModelConfig(**cfg)._shared_dim() == ModelConfig(**cfg)._ffn_dim()
+
+
+def test_shared_expert_export_matches_qwen2_moe(labeled, tmp_path):
+    transformers = pytest.importorskip("transformers")
+    from artemis.export import export_model
+    run = tmp_path / "run"
+    train_main(["--size", "smoke-moe-s", "--data", str(labeled["data"]), "--out", str(run), "--steps", "10",
+                "--batch", "4", "--eval-every", "10", "--eval-batches", "2", "--ckpt-every", "10"])
+    out = export_model(str(run / "latest.pt"), str(labeled["tok"]), str(tmp_path / "hf"), dtype=torch.float32)
+    hf_cfg = json.loads((out / "config.json").read_text())
+    assert hf_cfg["shared_expert_intermediate_size"] < hf_cfg["intermediate_size"]
+    hf = transformers.AutoModelForCausalLM.from_pretrained(out, dtype=torch.float32).eval()
+    ours, _ = checkpoint.load_model(run / "latest.pt")
+    ids = torch.randint(0, 2048, (2, 40))
+    with torch.no_grad():
+        a, _ = ours.eval()(ids)
+        b = hf(ids).logits
+    assert torch.allclose(a, b, atol=1e-4), (a - b).abs().max()
+
+
 def test_inference_streams_through_the_experts(labeled, tmp_path):
     from artemis.infer import LocalModel
     run = tmp_path / "run"

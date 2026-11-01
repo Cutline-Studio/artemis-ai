@@ -21,6 +21,8 @@ experts: intent · architecture · planning · build · test · deploy · memory
 | Prime Core | `ArtemisLM` (embedding, `Attention`, `FeedForward`, `RMSNorm`, head) | Shared decoder-only transformer. Runs on every token and generates every token. |
 | Router | `ExpertMixture.router` | `Linear(d_model → 10)` per expert layer, learned. Softmax, keep top 2, renormalize the two weights to sum to 1. |
 | Experts | `ExpertMixture.experts[0..9]` | Ten SwiGLU feed-forward modules, each with its own weights. Their weighted outputs are added to the Prime Core's residual stream. |
+
+Shared-expert mode: setting `shared_ffn_mult` in a size (for example `100m-s`) makes the always-on FFN at expert layers that width instead of the full dense FFN. Layers without experts keep the full FFN. Checkpoints saved without the field load in the original additive layout, and the export maps the smaller FFN to Qwen2-MoE's `shared_expert_intermediate_size`.
 | Expert layers | `ModelConfig.moe_layers` / `moe_every` | Selected layers only (prototype: 1, 3, 5 of 6; GPU sizes: every second layer). |
 | Load balancing | `balance_coef` × Switch-style loss | `10 · Σ_e (share of routing slots_e × mean router probability_e)`; 1.0 = perfectly even. |
 | Router z-loss | `router_z_coef` × mean(logsumexp(logits)²) | Keeps router logits from growing without bound. |
