@@ -6,6 +6,8 @@
 set -u
 W=/w; mkdir -p $W/runs; cd "$(dirname "$0")/../.."
 START=$(date +%s)
+echo "BOOT env: DPH=${DPH:-unset} CAP_USD=${CAP_USD:-unset} MAX_HOURS=${MAX_HOURS:-unset} STEPS=${STEPS:-unset} url=${ARTEMIS_KILLSWITCH_STATE_URL:+set} key=${ARTEMIS_KILLSWITCH_STATE_PUBKEY_B64:+set} container=${CONTAINER_ID:-unset}"
+fail() { echo "FAILED: $1 (box stays up 10 min so the log can be read, then destroys itself)"; sleep 600; destroy "$1"; exit 1; }
 destroy() {
   echo "WATCHDOG destroying instance: $1" >&2
   for i in 1 2 3 4 5; do
@@ -33,13 +35,14 @@ watchdog() {
 }
 watchdog &
 
-pip install -q tokenizers pyyaml pyarrow cryptography numpy 2>&1 | tail -1
+pip install -q tokenizers pyyaml pyarrow cryptography numpy 2>&1 | tail -3
+python -c "import tokenizers, yaml, pyarrow, cryptography, torch; print('DEPS ok torch', torch.__version__, torch.cuda.device_count(), 'gpus')" || fail "dependencies"
 printf '%s' "$ARTEMIS_KILLSWITCH_STATE_PUBKEY_B64" | base64 -d > $W/state.pub.pem
 export ARTEMIS_KILLSWITCH_STATE_PUBKEY=$W/state.pub.pem
-python -c "from artemis.killswitch import KillSwitch; print('KILLSWITCH', KillSwitch.from_env().check())" || { destroy "kill switch not running; not training"; exit 1; }
+python -c "from artemis.killswitch import KillSwitch; print('KILLSWITCH', KillSwitch.from_env().check())" || fail "kill switch not running or unreadable; not training"
 
 python infra/vast/prep_fineweb.py --out $W/data --shards ${SHARDS:-2} 2>&1 | sed -u 's/^/PREP /'
-[ -f $W/data/manifest.json ] || { destroy "data prep failed"; exit 1; }
+[ -f $W/data/manifest.json ] || fail "data prep failed"
 
 ARGS="--data $W/data --steps $STEPS --batch 4 --accum 6 --lr 3e-4 --warmup 450 --route-coef 0 --eval-every 500 --eval-batches 20 --ckpt-every 500 --seed 1337"
 CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node 2 --master_port 29500 -m artemis.train --size 100m --out $W/runs/100m $ARGS 2>&1 | sed -u 's/^/A100M /' &
