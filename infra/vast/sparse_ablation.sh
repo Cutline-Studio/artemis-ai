@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Matched-token ablation on one 4-GPU Vast box: 100m (GPUs 0,1) against 100m-s (GPUs 2,3), same data and seed.
 # Runs as the container command. Needs env: DPH (box $/h), CAP_USD, MAX_HOURS, STEPS, and the kill switch pair
-# ARTEMIS_KILLSWITCH_STATE_URL + ARTEMIS_KILLSWITCH_STATE_PUBKEY_PEM (public key text). The watchdog destroys the box
+# ARTEMIS_KILLSWITCH_STATE_URL + ARTEMIS_KILLSWITCH_STATE_PUBKEY_B64 (base64 of the public key PEM). The watchdog destroys the box
 # at the cap, the time limit, or 20 minutes after both arms finish. Logs go to stdout so the Vast log endpoint shows them.
 set -u
 W=/w; mkdir -p $W/runs; cd "$(dirname "$0")/../.."
@@ -34,7 +34,7 @@ watchdog() {
 watchdog &
 
 pip install -q tokenizers pyyaml pyarrow cryptography numpy 2>&1 | tail -1
-printf '%s\n' "$ARTEMIS_KILLSWITCH_STATE_PUBKEY_PEM" > $W/state.pub.pem
+printf '%s' "$ARTEMIS_KILLSWITCH_STATE_PUBKEY_B64" | base64 -d > $W/state.pub.pem
 export ARTEMIS_KILLSWITCH_STATE_PUBKEY=$W/state.pub.pem
 python -c "from artemis.killswitch import KillSwitch; print('KILLSWITCH', KillSwitch.from_env().check())" || { destroy "kill switch not running; not training"; exit 1; }
 
