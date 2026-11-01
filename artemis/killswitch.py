@@ -1,8 +1,8 @@
 """Read-only check of the owner's kill switch before and during training.
 
 The kill switch site publishes {"payload": base64(json {"stopped": bool, "ts": unix seconds}), "signature": base64(DER
-ECDSA-SHA256)}. Training may run only while a fresh, correctly signed state says stopped=false. Anything else (stopped,
-bad signature, stale or missing timestamp, unreachable site) counts as stop: the check fails closed. This module only
+ECDSA P-256 / SHA-256 over DOMAIN + the decoded payload)}. Training may run only while a fresh, correctly signed state
+says stopped=false. Anything else (stopped, bad signature, stale or missing timestamp, unreachable site) counts as stop: the check fails closed. This module only
 reads the public state URL. It never writes to, resets or enrolls anything on the kill switch.
 
 Configure with ARTEMIS_KILLSWITCH_STATE_URL and ARTEMIS_KILLSWITCH_STATE_PUBKEY (path to the owner's state public key,
@@ -17,6 +17,7 @@ import time
 import urllib.request
 from dataclasses import dataclass
 
+DOMAIN = b"artemis-killswitch-state-v1\n"  # signed prefix, so no other message signed by the owner key passes as a state
 MAX_AGE_S = 300  # the site signs a new timestamp on every request, so an older state is a replay or a stuck cache
 
 
@@ -57,16 +58,16 @@ class KillSwitch:
         key = serialization.load_pem_public_key(self.pubkey_pem)
         if not isinstance(key, ec.EllipticCurvePublicKey):
             raise KillSwitchStop("kill switch public key must be an EC key")
-        # the signature may cover the decoded payload or its base64 text; both carry the same signed content
-        for message in (raw, doc["payload"].encode()):
-            try:
-                key.verify(sig, message, ec.ECDSA(hashes.SHA256()))
-                break
-            except InvalidSignature:
-                continue
-        else:
-            raise KillSwitchStop("kill switch signature does not verify")
-        state = json.loads(raw)
+        try:
+            key.verify(sig, DOMAIN + raw, ec.ECDSA(hashes.SHA256()))
+        except InvalidSignature:
+            raise KillSwitchStop("kill switch signature does not verify") from None
+        try:
+            state = json.loads(raw)
+        except ValueError:
+            state = None
+        if not isinstance(state, dict):
+            raise KillSwitchStop("kill switch payload is not a JSON object")
         ts, stopped = state.get("ts"), state.get("stopped")
         if not isinstance(ts, (int, float)) or abs((now or time.time()) - ts) > self.max_age_s:
             raise KillSwitchStop(f"kill switch state is stale or undated (ts={ts})")

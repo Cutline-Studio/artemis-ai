@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from artemis import train
-from artemis.killswitch import KillSwitch, KillSwitchStop
+from artemis.killswitch import DOMAIN, KillSwitch, KillSwitchStop
 
 
 def keypair():
@@ -19,9 +19,9 @@ def keypair():
     return key, pem
 
 
-def signed(key, stopped=False, ts=None, sign_text=False):
+def signed(key, stopped=False, ts=None, prefix=DOMAIN):
     payload = base64.b64encode(json.dumps({"stopped": stopped, "ts": time.time() if ts is None else ts}).encode()).decode()
-    message = payload.encode() if sign_text else base64.b64decode(payload)
+    message = prefix + base64.b64decode(payload)
     return {"payload": payload, "signature": base64.b64encode(key.sign(message, ec.ECDSA(hashes.SHA256()))).decode()}
 
 
@@ -52,10 +52,11 @@ def test_fresh_signed_running_state_passes(site):
     assert KillSwitch(site.url, pem).check()["stopped"] is False
 
 
-def test_signature_over_the_base64_payload_text_also_verifies(site):
+def test_owner_signature_without_the_state_domain_prefix_is_refused(site):
     key, pem = keypair()
-    site.state = lambda: signed(key, sign_text=True)
-    assert KillSwitch(site.url, pem).check()["stopped"] is False
+    site.state = lambda: signed(key, prefix=b"")
+    with pytest.raises(KillSwitchStop, match="signature"):
+        KillSwitch(site.url, pem).check()
 
 
 def test_owner_stop_is_refused(site):
