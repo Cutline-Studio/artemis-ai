@@ -51,7 +51,7 @@ def hf_moe_config(cfg: ModelConfig, tok_path: str) -> dict:
     base = hf_config(cfg, tok_path)
     base.update({"architectures": ["Qwen2MoeForCausalLM"], "model_type": "qwen2_moe", "num_experts": cfg.n_experts,
                  "num_experts_per_tok": cfg.experts_per_token, "norm_topk_prob": True, "moe_intermediate_size": cfg._expert_dim(),
-                 "shared_expert_intermediate_size": cfg._ffn_dim(), "decoder_sparse_step": 1,
+                 "shared_expert_intermediate_size": cfg._shared_dim(), "decoder_sparse_step": 1,
                  "mlp_only_layers": [i for i in range(cfg.n_layers) if i not in cfg.moe_layers],
                  "router_aux_loss_coef": cfg.balance_coef, "output_router_logits": False, "use_sliding_window": False,
                  "artemis_expert_names": list(cfg.expert_names)})

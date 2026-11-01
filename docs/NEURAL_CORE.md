@@ -27,6 +27,8 @@ experts: intent · architecture · planning · build · test · deploy · memory
 | Routing supervision | `--route-coef` × NLL of the labeled domain's expert | Only on tokens whose domain is labeled. Teaches the router which expert a domain belongs to; at inference no labels exist and the router decides alone. |
 | Diagnostics | `metrics.jsonl` | Per step: each loss term, per-layer expert load, router entropy; at eval steps: router and per-expert gradient norms, validation loss. |
 
+Shared-expert mode: setting `shared_ffn_mult` in a size (for example `100m-s`) makes the always-on FFN at expert layers that width instead of the full dense FFN. Layers without experts keep the full FFN. Checkpoints saved without the field load in the original additive layout, and the export maps the smaller FFN to Qwen2-MoE's `shared_expert_intermediate_size`.
+
 Attention, normalization and positional encoding: RMSNorm (pre-norm), rotary embeddings, grouped-query
 attention (`n_kv_heads < n_heads`), SwiGLU in the Prime Core FFN and in every expert.
 

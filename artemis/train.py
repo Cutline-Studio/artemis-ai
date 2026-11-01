@@ -3,6 +3,8 @@
 Single process:   python -m artemis.train --size proto --data runs/data --out runs/proto
 8 GPUs (1 VM):    torchrun --nproc_per_node 8 -m artemis.train --size 1b --data ... --out ...
 Resumes automatically from the latest checkpoint in --out (same model config required).
+GPU runs need the owner's kill switch (ARTEMIS_KILLSWITCH_STATE_URL + ARTEMIS_KILLSWITCH_STATE_PUBKEY, see killswitch.py):
+the state is checked before the first step and every --killswitch-every steps; a stop saves latest.pt and exits.
 
 Loss = next-token loss + balance_coef * load-balancing loss + router_z_coef * router z-loss
        + route_coef * routing-supervision loss (only on domain-labeled tokens; --route-coef 0 turns it off).
@@ -24,6 +26,7 @@ import torch.distributed as dist
 import yaml
 
 from . import checkpoint
+from .killswitch import KillSwitch, KillSwitchStop
 from .data import TokenStream
 from .evaluate import validation_loss
 from .model import ArtemisLM, ModelConfig, parameter_groups
@@ -66,6 +69,21 @@ def grad_norms(model: ArtemisLM) -> dict:
     return out
 
 
+def killswitch_ok(ks: KillSwitch, tries: int = 3, wait_s: float = 10.0) -> str | None:
+    """None while the owner state is running; otherwise the reason to stop. Retries only unreachable or stale reads."""
+    reason = None
+    for i in range(tries):
+        try:
+            ks.check()
+            return None
+        except KillSwitchStop as e:
+            reason = str(e)
+            if "stopped" in reason or "signature" in reason or i == tries - 1:
+                return reason
+            time.sleep(wait_s)
+    return reason
+
+
 def main(argv=None) -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--size", default="smoke")
@@ -82,6 +100,7 @@ def main(argv=None) -> dict:
     ap.add_argument("--eval-batches", type=int, default=10)
     ap.add_argument("--ckpt-every", type=int, default=100)
     ap.add_argument("--seed", type=int, default=1337)
+    ap.add_argument("--killswitch-every", type=int, default=20, help="steps between kill switch checks")
     args = ap.parse_args(argv)
 
     ddp = int(os.environ.get("WORLD_SIZE", "1")) > 1
@@ -94,6 +113,21 @@ def main(argv=None) -> dict:
         rank = 0
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     main_proc = rank == 0
+    ks = KillSwitch.from_env()
+    if ks is None and device.type == "cuda":
+        raise SystemExit("GPU training needs the kill switch: set ARTEMIS_KILLSWITCH_STATE_URL and ARTEMIS_KILLSWITCH_STATE_PUBKEY")
+
+    def owner_stop() -> str | None:
+        reason = killswitch_ok(ks) if ks is not None and main_proc else None
+        if ddp:
+            flag = torch.tensor([1 if reason else 0], device=device)
+            dist.broadcast(flag, 0)
+            reason = reason or ("kill switch stop" if flag.item() else None)
+        return reason
+
+    stop_reason = owner_stop()
+    if stop_reason:
+        raise SystemExit(f"not starting: {stop_reason}")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -177,9 +211,18 @@ def main(argv=None) -> dict:
             log.flush()
             if step % args.ckpt_every == 0 or step == end:
                 checkpoint.save(latest, raw, opt, step, vars(args))
+        if ks is not None and step % args.killswitch_every == 0 and step < end:
+            stop_reason = owner_stop()
+            if stop_reason:
+                if main_proc:
+                    checkpoint.save(latest, raw, opt, step, vars(args))
+                    print(json.dumps({"step": step, "stopped": stop_reason}), flush=True)
+                break
     result = {}
     if main_proc:
         result = json.loads(open(out / "metrics.jsonl").read().strip().splitlines()[-1])
+        if stop_reason:
+            result["stopped"] = stop_reason
         log.close()
     if ddp:
         dist.destroy_process_group()
